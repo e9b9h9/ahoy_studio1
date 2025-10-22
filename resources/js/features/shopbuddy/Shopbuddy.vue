@@ -14,7 +14,8 @@ const props = defineProps({
 
 const store = useShopbuddyStore();
 /* 
-multiline
+multiline primary category	additional categories	website URL	maps URL	place CID	review count	star rating	recent review date	address locality	zip code
+
 */
 // Get the current prefix from store, fallback to props.id
 const currentPrefix = computed(() => store.getInitialPrefix(props.id));

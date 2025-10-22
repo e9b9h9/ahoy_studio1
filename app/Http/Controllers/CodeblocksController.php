@@ -2,6 +2,10 @@
 
 namespace App\Http\Controllers;
 
+// COMMENTED OUT: Codeblock creation controller
+// This controller has been disabled along with codeblock functionality
+
+/*
 use App\Services\CreateCodeblocks;
 use Illuminate\Http\Request;
 
@@ -19,3 +23,4 @@ class CodeblocksController extends Controller
         ]);
     }
 }
+*/

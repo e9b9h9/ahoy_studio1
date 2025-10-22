@@ -3,6 +3,8 @@ import AppLayout from '@/layouts/AppLayout.vue';
 import NotemateLayout from '@/features/notemate/NotemateLayout.vue';
 import NotemateMemory from '@/features/notemate/NotemateMemory.vue';
 import FileChanges from '@/features/notemate/FileChanges.vue';
+import CodelineProcessor from '@/features/notemate/CodelineProcessor.vue';
+import CodelineDetails from '@/features/notemate/CodelineDetails.vue';
 import Shopbuddy from '@/features/shopbuddy/Shopbuddy.vue';
 import { notemate } from '@/routes';
 import { Head } from '@inertiajs/vue3';
@@ -29,12 +31,12 @@ const breadcrumbs = [
 
             <!-- Main content slot -->
             <template #main-content>
-                <!-- File content with comments will be shown here -->
+                <CodelineProcessor />
             </template>
 
             <!-- Right sidebar top slot -->
             <template #right-sidebar-top>
-                <!-- Features list will be populated here -->
+                <CodelineDetails />
             </template>
 
             <!-- Right sidebar bottom slot -->

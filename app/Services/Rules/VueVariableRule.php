@@ -33,6 +33,9 @@ class VueVariableRule implements CodelineRuleInterface
             $variables = $this->extractPropsDefinitionVariables($lineContent);
         } elseif ($purposeKey === 'prop_property') {
             $variables = $this->extractPropPropertyVariables($lineContent);
+        } else {
+            // Check for require statements and dynamic imports regardless of purpose key
+            $variables = $this->extractModulePathsFromLine($lineContent);
         }
         
         // Collect all variables found for later scanning
@@ -55,7 +58,8 @@ class VueVariableRule implements CodelineRuleInterface
         $variables = [];
         
         // Extract variables from import { var1, var2 } from 'vue'
-        if (preg_match('/import\s+\{\s*([^}]+)\s*\}/', $line, $matches)) {
+        if (preg_match('/import\s+\{\s*([^}]+)\s*\}\s+from\s+[\'"]([^\'"]+)[\'"]/', $line, $matches)) {
+            // Extract the imported variables
             $imports = explode(',', $matches[1]);
             foreach ($imports as $import) {
                 $varName = trim($import);
@@ -66,6 +70,26 @@ class VueVariableRule implements CodelineRuleInterface
                     ];
                 }
             }
+            
+            // Also add the module path as a variable
+            $modulePath = $matches[2];
+            $variables[] = [
+                'name' => $modulePath,
+                'type' => 'module_import'
+            ];
+        }
+        // Also check for default imports from 'vue'
+        elseif (preg_match('/import\s+([a-zA-Z_$][a-zA-Z0-9_$]*)\s+from\s+[\'"]([^\'"]+)[\'"]/', $line, $matches)) {
+            $variables[] = [
+                'name' => $matches[1],
+                'type' => 'composition_api'
+            ];
+            
+            // Add the module path as a variable
+            $variables[] = [
+                'name' => $matches[2],
+                'type' => 'module_import'
+            ];
         }
         
         return $variables;
@@ -89,6 +113,12 @@ class VueVariableRule implements CodelineRuleInterface
                     ];
                 }
             }
+            
+            // Add the module path as a variable
+            $variables[] = [
+                'name' => $source,
+                'type' => 'module_import'
+            ];
         }
         // Check for default import: import VariableName from './path/to/file'
         elseif (preg_match('/import\s+([a-zA-Z_$][a-zA-Z0-9_$]*)\s+from\s+[\'"]([^\'"]+)[\'"]/', $line, $matches)) {
@@ -97,8 +127,21 @@ class VueVariableRule implements CodelineRuleInterface
                 'type' => 'vue_component',
                 'source' => $matches[2]
             ];
+            
+            // Add the module path as a variable
+            $variables[] = [
+                'name' => $matches[2],
+                'type' => 'module_import'
+            ];
         }
-        
+        // Check for side-effect imports: import 'module-path'
+        elseif (preg_match('/import\s+[\'"]([^\'"]+)[\'"]/', $line, $matches)) {
+            // Just the module path for side-effect imports
+            $variables[] = [
+                'name' => $matches[1],
+                'type' => 'module_import'
+            ];
+        }
         return $variables;
     }
     
@@ -247,6 +290,41 @@ class VueVariableRule implements CodelineRuleInterface
             $variables[] = [
                 'name' => $matches[1],
                 'type' => 'prop_property'
+            ];
+        }
+        
+        return $variables;
+    }
+    
+    protected function extractModulePathsFromLine(string $line): array
+    {
+        $variables = [];
+        
+        // Check for require() statements: require('module-path')
+        if (preg_match_all('/require\s*\(\s*[\'"]([^\'"]+)[\'"]\s*\)/', $line, $matches)) {
+            foreach ($matches[1] as $modulePath) {
+                $variables[] = [
+                    'name' => $modulePath,
+                    'type' => 'module_import'
+                ];
+            }
+        }
+        
+        // Check for dynamic imports: import('module-path')
+        if (preg_match_all('/import\s*\(\s*[\'"]([^\'"]+)[\'"]\s*\)/', $line, $matches)) {
+            foreach ($matches[1] as $modulePath) {
+                $variables[] = [
+                    'name' => $modulePath,
+                    'type' => 'module_import'
+                ];
+            }
+        }
+        
+        // Check for export statements: export { something } from 'module-path'
+        if (preg_match('/export\s+.*\s+from\s+[\'"]([^\'"]+)[\'"]/', $line, $matches)) {
+            $variables[] = [
+                'name' => $matches[1],
+                'type' => 'module_import'
             ];
         }
         

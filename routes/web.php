@@ -22,6 +22,15 @@ Route::get('notemate', function () {
 	return Inertia::render('Notemate');
 })->middleware(['auth', 'verified'])->name('notemate');
 
+Route::get('ebook-reader', [App\Http\Controllers\EbookController::class, 'index'])
+    ->middleware(['auth', 'verified'])->name('ebook.reader');
+
+Route::post('ebook-reader/upload', [App\Http\Controllers\EbookController::class, 'upload'])
+    ->middleware(['auth', 'verified'])->name('ebook.upload');
+
+Route::get('ebook-reader/{ebook}/read/{section?}', [App\Http\Controllers\EbookController::class, 'read'])
+    ->middleware(['auth', 'verified'])->name('ebook.read');
+
 Route::get('notemate/codefolders', [NotemateController::class, 'getCodefolders'])
     ->middleware(['auth', 'verified'])->name('notemate.codefolders.index');
 
@@ -48,6 +57,21 @@ Route::post('notemate/framefiles/process', [FramefilesController::class, 'proces
 
 Route::post('notemate/codelines/process', [CodelinesController::class, 'process'])
     ->middleware(['auth', 'verified'])->name('notemate.codelines.process');
+
+Route::get('api/notemate/temp-codelines', [CodelinesController::class, 'getTempCodelines'])
+    ->middleware(['auth', 'verified'])->name('notemate.tempcodelines.index');
+
+Route::get('api/notemate/variables-codelines', [CodelinesController::class, 'getVariablesWithCodelines'])
+    ->middleware(['auth', 'verified'])->name('notemate.variablescodelines.index');
+
+Route::post('api/notemate/variables', [CodelinesController::class, 'addVariable'])
+    ->middleware(['auth', 'verified'])->name('notemate.variables.store');
+
+Route::get('api/notemate/connection-stats', [CodelinesController::class, 'getConnectionStats'])
+    ->middleware(['auth', 'verified'])->name('notemate.connections.stats');
+
+Route::delete('api/notemate/connections', [CodelinesController::class, 'clearConnections'])
+    ->middleware(['auth', 'verified'])->name('notemate.connections.clear');
 
  // Filetree routes
  Route::post('make/filetree', [FiletreeController::class, 'store'])

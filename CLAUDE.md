@@ -30,6 +30,13 @@ npm run format:check # Check code formatting
 npm run file-watcher # Start the file monitoring service
 ```
 
+**Composer scripts (for full-stack development):**
+```bash
+composer dev         # Concurrent Laravel server + queue + Vite
+composer dev:ssr     # Full SSR development with logs
+composer test        # Run PestPHP test suite
+```
+
 **Important notes about commands:**
 - DO NOT use PHP artisan commands through WSL environment
 - The environment is running in WSL terminal on Windows - cannot execute direct commands
@@ -44,14 +51,16 @@ npm run file-watcher # Start the file monitoring service
 **Testing:**
 - Backend: PestPHP testing framework configured
 - Test files located in `tests/` directory
-- Run tests: `php artisan test` or `composer test`
+- Run tests: `composer test` (preferred in WSL)
+- Test database: SQLite in-memory for fast testing
 - No frontend testing framework currently configured
 
 ## Project Overview
 
-Laravel + Vue.js + Inertia SPA application with two main features:
+Laravel + Vue.js + Inertia SPA application with three main features:
 1. **Notemate** - Code change tracker that associates code changes with features/tasks
 2. **Shopbuddy** - Terminal-like interface with command registry system for app interactions
+3. **Ebook Reader** - Text-to-speech ebook reader with OpenAI TTS integration
 
 ### Tech Stack
 - **Backend**: PHP 8.2, Laravel 12, MySQL (SQLite for development)
@@ -62,6 +71,8 @@ Laravel + Vue.js + Inertia SPA application with two main features:
 - **Build System**: Vite 7.0 with Laravel Vite plugin
 - **Authentication**: Laravel Fortify with two-factor authentication
 - **Routing**: Laravel Wayfinder generates TypeScript route definitions
+- **Development Database**: SQLite (database.sqlite)
+- **AI Integration**: OpenAI API for text-to-speech generation
 
 ## Architecture
 
@@ -91,6 +102,7 @@ Laravel + Vue.js + Inertia SPA application with two main features:
 - Components: `Shopbuddy.vue`, `ShopbuddyInput.vue`, `ShopbuddyOutput.vue`
 - Logic: `useShopbuddy.js` composable handles command parsing and execution
 - State: `shopbuddy.store.js` manages command prefixes and terminal state
+- Registry: Command registry system in `useShopbuddy.js` for extensible commands
 
 **Notemate Code Tracking:**
 - Database: Complex schema with multiple tables for comprehensive code tracking:
@@ -99,9 +111,22 @@ Laravel + Vue.js + Inertia SPA application with two main features:
   - `notemate_snippet_features`: Associates code snippets with features
   - `notemate_framefiles`, `notemate_codelines`: Granular code tracking
   - `notemate_languages`, `notemate_extensions`: Language and file type tracking
+  - `master_codelines`: Advanced codeline analysis with variables and structure detection
 - Layout: `NotemateLayout.vue` with dedicated route at `/notemate`
 - File Monitoring: Real-time file watcher service (`file-watcher.js`) using chokidar
+- Processing: `CodelineProcessingService.php` with rule-based code analysis
 - Architecture: Designed for automatic code change tracking, comment injection, and feature association
+
+**Ebook Reader System:**
+- Database: Ebook management with comprehensive features:
+  - `ahoy_ebook_library`: Book storage with metadata (title, author, file info)
+  - `ahoy_ebook_sections`: Content sections for granular navigation and audio generation
+  - `ahoy_ebook_reading_sessions`: User progress tracking and preferences
+  - `ahoy_ebook_audio_cache`: Cached TTS-generated audio files
+- File Processing: Supports TXT files with automatic section detection (PDF/EPUB planned)
+- OpenAI Integration: Text-to-speech generation using OpenAI TTS API
+- Components: Upload interface, library view, and reading interface (in development)
+- Architecture: Designed for file upload, content processing, audio generation, and synchronized reading
 
 ### Component Patterns
 - **UI Components**: Located in `resources/js/components/ui/` following shadcn/ui patterns
@@ -115,19 +140,26 @@ Laravel + Vue.js + Inertia SPA application with two main features:
   - `notemate_codefolders`: Project paths and working status
   - `notemate_file_changes`, `notemate_snippet_features`: Change tracking
   - `notemate_framefiles`, `notemate_codelines`: Code analysis
+  - `master_codelines`: Advanced analysis with variables and structure
   - `notemate_languages`, `notemate_extensions`: File type management
   - `filetrees`, `temp_codelines`, `variables`, `codeblocks`: Additional code analysis
+- **Ebook Tables**: 
+  - `ahoy_ebook_library`: Book information and metadata
+  - `ahoy_ebook_sections`: Content sections and navigation
+  - `ahoy_ebook_reading_sessions`: User progress and preferences
+  - `ahoy_ebook_audio_cache`: TTS-generated audio file cache
 - **Standard Laravel**: Cache, jobs, sessions, and personal access tokens tables
 
 ### File Organization
 **Backend Structure:**
-- `app/Http/Controllers/` - Auth and Settings controllers with Inertia responses
-- `app/Models/` - Eloquent models (User, NotemateCodefolder, NotemateFileChange, etc.)
-- `app/Services/` - CodelineProcessingService and business logic
+- `app/Http/Controllers/` - Auth, Settings, and feature controllers with Inertia responses
+- `app/Models/` - Eloquent models (User, Notemate*, Ebook*, etc.)
+- `app/Services/` - Business logic services (CodelineProcessingService, etc.)
+- `app/Services/Rules/` - Modular code analysis rules (VueVariableRule, CommentRule, etc.)
 - `routes/` - Organized by feature (web.php, auth.php, settings.php)
 
 **Frontend Structure:**
-- `resources/js/features/` - Feature-specific components (notemate/, shopbuddy/)
+- `resources/js/features/` - Feature-specific components (notemate/, shopbuddy/, ebook/)
 - `resources/js/components/ui/` - Shared UI component library
 - `resources/js/layouts/` - Layout components (App, Auth, Settings)
 - `resources/js/pages/` - Inertia page components
@@ -138,6 +170,7 @@ Laravel + Vue.js + Inertia SPA application with two main features:
 
 **Database Operations:**
 ```bash
+# Note: These commands should be run outside WSL or using composer scripts
 php artisan migrate              # Run migrations
 php artisan migrate:fresh --seed  # Fresh database with seeders
 php artisan tinker               # Interactive PHP shell
@@ -159,4 +192,11 @@ php artisan tinker               # Interactive PHP shell
 - Start watcher: `npm run file-watcher`
 - Monitors changes in tracked folders from `notemate_codefolders`
 - Automatically posts file changes to Laravel backend
+- Processes files through rule-based analysis pipeline
 - Ignores node_modules, vendor, .git directories
+
+**OpenAI Integration:**
+- Requires OPENAI_API_KEY in .env file
+- TTS generation through OpenAI API for ebook audio
+- Audio files cached in storage/app/ebook-audio/
+- Supports voice selection and speed control

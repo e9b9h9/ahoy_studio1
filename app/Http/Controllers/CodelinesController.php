@@ -8,7 +8,10 @@ use App\Models\Language;
 use App\Models\LanguageExtension;
 use App\Models\Variable;
 use App\Services\CodelineProcessingService;
-use App\Services\CreateCodeblocks;
+use App\Services\CodelineConnectionService;
+// COMMENTED OUT: Codeblock creation service
+// use App\Services\CreateCodeblocks;
+use App\Services\ModuleImportService;
 use App\Services\Rules\MultilineCommentRule;
 use App\Services\Rules\ConsecutiveCommentRule;
 use App\Services\Rules\EmbeddedCommentRule;
@@ -85,17 +88,29 @@ class CodelinesController extends Controller
             'processed_data' => $codelines
         ]);
 
+        // Track module imports for alert
+        $moduleImports = [];
+        
         // Process variables and prepare codelines for insertion
         $cleanedCodelines = collect($codelines)
     ->filter(fn($line) => !empty(trim($line['codeline'] ?? '')))
     ->filter(fn($line) => preg_match('/\S/', $line['codeline'] ?? ''))
-    ->map(function($line) {
+    ->map(function($line) use (&$moduleImports) {
         // Extract variable names array from the variables data
         $variableNames = [];
         if (isset($line['variables']) && is_array($line['variables'])) {
             foreach ($line['variables'] as $variable) {
                 if (isset($variable['name'])) {
                     $variableNames[] = $variable['name'];
+                    
+                    // Track module imports for alert
+                    if (isset($variable['type']) && $variable['type'] === 'module_import') {
+                        $moduleImports[] = [
+                            'module' => $variable['name'],
+                            'line_number' => $line['line_number'] ?? null,
+                            'codeline' => $line['codeline'] ?? ''
+                        ];
+                    }
                     
                     // Save each variable to the variables table
                     Variable::firstOrCreate(
@@ -142,17 +157,50 @@ class CodelinesController extends Controller
         Log::info('Master codeline creation completed', [
             'new_master_codelines' => $masterCodelineData['new_master_codelines'],
             'linked_to_existing' => $masterCodelineData['linked_to_existing'],
-            'total_processed' => $masterCodelineData['total_processed']
+            'total_processed' => $masterCodelineData['total_processed'],
+            'variable_links_created' => $masterCodelineData['variable_links_created'] ?? 0
         ]);
 
+        // Create connections between codelines that share variables
+        try {
+            $connectionService = new CodelineConnectionService();
+            $connectionStats = $connectionService->createVariableConnections($codelines);
+            
+            Log::info('Codeline connection creation completed', $connectionStats);
+        } catch (\Exception $e) {
+            Log::error('Failed to create codeline connections', [
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
+            
+            // Set default stats so processing can continue
+            $connectionStats = [
+                'connections_created' => 0,
+                'variables_processed' => 0,
+                'codelines_analyzed' => count($codelines),
+                'shared_variables' => [],
+                'errors' => ['Connection service failed: ' . $e->getMessage()]
+            ];
+        }
+
+        // COMMENTED OUT: Codeblock creation logic
         // THEN create codeblocks after master codelines are created
-        $codeblockService = new CreateCodeblocks();
-        $codeblockResult = $codeblockService->process();
+        // $codeblockService = new CreateCodeblocks();
+        // $codeblockResult = $codeblockService->process();
         
-        Log::info('Codeblock creation completed', [
-            'codeblocks_created' => $codeblockResult['codeblocks_created'],
-            'total_lines_processed' => $codeblockResult['total_lines_processed']
-        ]);
+        // Log::info('Codeblock creation completed', [
+        //     'codeblocks_created' => $codeblockResult['codeblocks_created'],
+        //     'total_lines_processed' => $codeblockResult['total_lines_processed']
+        // ]);
+        
+        // Set default values for codeblock results since we're not running it
+        $codeblockResult = [
+            'codeblocks_created' => 0,
+            'total_lines_processed' => 0
+        ];
+        
+        // Alert about module imports
+        ModuleImportService::alertModuleImports($fullPath, $moduleImports);
 
         return response()->json([
             'success' => true,
@@ -162,7 +210,166 @@ class CodelinesController extends Controller
                 'new' => $masterCodelineData['new_master_codelines'],
                 'linked' => $masterCodelineData['linked_to_existing'],
                 'total' => $masterCodelineData['total_processed']
-            ]
+            ],
+            'variable_links_created' => $masterCodelineData['variable_links_created'] ?? 0,
+            'codeline_connections' => $connectionStats,
+            'module_imports' => !empty($moduleImports) ? [
+                'alert' => true,
+                'total' => count(collect($moduleImports)->unique('module')),
+                'modules' => collect($moduleImports)->unique('module')->pluck('module')->sort()->values()->toArray(),
+                'details' => collect($moduleImports)->unique('module')->map(function($import) {
+                    return [
+                        'module' => $import['module'],
+                        'line' => $import['line_number']
+                    ];
+                })->sortBy('line')->values()->toArray()
+            ] : ['alert' => false, 'total' => 0]
+        ]);
+    }
+
+    /**
+     * Get temp codelines for display in UI
+     */
+    public function getTempCodelines()
+    {
+        $codelines = TempCodeline::with('language')
+            ->orderBy('line_number')
+            ->get();
+
+        return response()->json([
+            'success' => true,
+            'codelines' => $codelines,
+            'total_count' => $codelines->count()
+        ]);
+    }
+
+    /**
+     * Get variables for highlighting (just the variable names and types)
+     */
+    public function getVariablesWithCodelines()
+    {
+        // Get all unique variables from the variables table
+        $variables = \DB::table('variables')
+            ->select(
+                'variables.variable as variable_name',
+                'variables.type as variable_type'
+            )
+            ->distinct()
+            ->get()
+            ->keyBy('variable_name');
+
+        return response()->json([
+            'success' => true,
+            'variables' => $variables,
+            'total_variables' => count($variables)
+        ]);
+    }
+
+    /**
+     * Add a new variable to the variables table
+     */
+    public function addVariable(Request $request)
+    {
+        try {
+            \Log::info('Add variable request received', [
+                'variable' => $request->input('variable'),
+                'type' => $request->input('type'),
+                'codeline_id' => $request->input('codeline_id')
+            ]);
+
+            $request->validate([
+                'variable' => 'required|string|max:255',
+                'type' => 'nullable|string|max:100',
+                'codeline_id' => 'nullable|integer|exists:temp_codelines,id'
+            ]);
+
+            $variableName = $request->input('variable');
+            $variableType = $request->input('type', 'user_added');
+            $codelineId = $request->input('codeline_id');
+
+            // Check if variable already exists
+            $existingVariable = \DB::table('variables')
+                ->where('variable', $variableName)
+                ->first();
+
+            if ($existingVariable) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Variable already exists in database',
+                    'variable' => $existingVariable
+                ], 409);
+            }
+
+            // Get next variable_id
+            $maxVariableId = \DB::table('variables')->max('variable_id') ?: 0;
+
+            // Add new variable
+            $variableId = \DB::table('variables')->insertGetId([
+                'variable' => $variableName,
+                'type' => $variableType,
+                'transformations' => json_encode([]),
+                'variable_id' => $maxVariableId + 1,
+                'created_at' => now(),
+                'updated_at' => now()
+            ]);
+
+            \Log::info('Variable added successfully', ['id' => $variableId, 'variable' => $variableName]);
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Variable added successfully',
+                'variable' => [
+                    'id' => $variableId,
+                    'variable' => $variableName,
+                    'type' => $variableType
+                ]
+            ]);
+
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            \Log::warning('Validation failed for add variable', ['errors' => $e->errors()]);
+            return response()->json([
+                'success' => false,
+                'message' => 'Validation failed',
+                'errors' => $e->errors()
+            ], 422);
+        } catch (\Exception $e) {
+            \Log::error('Error adding variable', [
+                'message' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
+            return response()->json([
+                'success' => false,
+                'message' => 'Server error: ' . $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * Get codeline connection statistics
+     */
+    public function getConnectionStats()
+    {
+        $connectionService = new CodelineConnectionService();
+        $stats = $connectionService->getConnectionStats();
+
+        return response()->json([
+            'success' => true,
+            'connection_stats' => $stats
+        ]);
+    }
+
+    /**
+     * Clear all codeline connections (for reprocessing)
+     */
+    public function clearConnections()
+    {
+        $connectionService = new CodelineConnectionService();
+        $deletedCount = $connectionService->clearAllConnections();
+
+        return response()->json([
+            'success' => true,
+            'message' => 'All connections cleared',
+            'deleted_count' => $deletedCount
         ]);
     }
 }

@@ -8,6 +8,10 @@ use App\Models\MasterCodeline;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 
+// COMMENTED OUT: Entire CreateCodeblocks service class
+// This logic has been disabled to remove codeblock creation functionality
+
+/*
 class CreateCodeblocks
 {
     public function process()
@@ -137,3 +141,4 @@ class CreateCodeblocks
         ];
     }
 }
+*/

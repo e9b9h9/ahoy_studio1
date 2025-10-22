@@ -152,12 +152,24 @@ class FileWatcher {
         console.log(`📝 ${type.toUpperCase()}: ${relativePath}`);
 
         try {
+            // Log file change
             await axios.post(`${this.baseUrl}/api/notemate/file-changes`, {
                 codefolder_id: this.activeFolder.id,
                 file_path: relativePath,
                 change_type: type,
                 detected_at: new Date().toISOString()
             });
+
+            // Process codelines for modified files to alert module imports
+            if (type === 'modified' || type === 'new') {
+                try {
+                    await axios.post(`${this.baseUrl}/notemate/codelines/process`, {
+                        file_path: filePath
+                    });
+                } catch (codelineError) {
+                    console.error('❌ Error processing codelines:', codelineError.message);
+                }
+            }
         } catch (error) {
             console.error('❌ Error sending change to server:', error.message);
         }

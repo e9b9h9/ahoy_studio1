@@ -21,6 +21,11 @@ const mainNavItems: NavItem[] = [
         href: notemate(),
         icon: LayoutGrid,
     },
+    {
+        title: 'EbookReader',
+        href: '/ebook-reader',
+        icon: BookOpen,
+    },
 ];
 
 const footerNavItems: NavItem[] = [
